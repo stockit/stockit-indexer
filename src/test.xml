@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<beans
+        xmlns="http://www.springframework.org/schema/beans"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:context="http://www.springframework.org/schema/context"
+        xmlns:p="http://www.springframework.org/schema/p"
+        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+                        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-2.5.xsd">
+
+
+    <bean class="org.springframework.context.annotation.CommonAnnotationBeanPostProcessor" />
+
+    <bean id="poolingCM" class="org.apache.http.impl.conn.PoolingHttpClientConnectionManager">
+        <property name="maxTotal" value="10" />
+        <property name="defaultMaxPerRoute" value="10" />
+    </bean>
+
+    <bean id="httpClientFactory" class="com.peapod.v2.search.indexer.util.HttpClientFactory" />
+
+    <bean id="httpClient" factory-bean="httpClientFactory" factory-method="getHttpClient">
+        <constructor-arg><ref bean="poolingCM" /></constructor-arg>
+    </bean>
+
+    <bean name="solrServer" class="org.apache.solr.client.solrj.impl.CloudSolrServer">
+        <constructor-arg value="${zk.hosts.urls}" />
+        <constructor-arg ref="lbSolrServer" />
+        <property name="zkClientTimeout" value="${zk.client.timeout}" />
+        <property name="zkConnectTimeout" value="${zk.connect.timeout}" />
+        <property name="parallelUpdates" value="true" />
+    </bean>
+
+    <bean name="lbSolrServer" class="org.apache.solr.client.solrj.impl.LBHttpSolrServer">
+        <constructor-arg value="${zk.hosts.urls}" />
+        <constructor-arg ref="httpClient" />
+    </bean>
+
+    <bean name="categoryTreeLoader" class="com.peapod.v2.search.indexer.svc.loader.impl.DatabaseCategoryTreeLoader">
+        <constructor-arg value="${catalog.tb}"/>
+        <property name="jdbcTemplate" ref="catalogJdbcTemplate"/>
+    </bean>
+
+    <bean name="searchPhraseCountLoader" class="com.peapod.v2.search.indexer.svc.loader.impl.DatabaseSearchPhraseCountLoader">
+        <property name="jdbcTemplate" ref="ppdWarehouseJdbcTemplate"/>
+    </bean>
+
+    <bean name="peapodProductToCategoryDelegate" class="com.peapod.v2.search.indexer.svc.indexer.impl.PeapodProductToCategoryLoaderDelegate">
+        <property name="catalogDb" value="${catalog.tb}"/>
+        <property name="jdbcTemplate" ref="catalogJdbcTemplate"/>
+    </bean>
+
+    <bean name="keywordsIndexer" class="com.peapod.v2.search.indexer.svc.indexer.impl.KeywordsIndexer">
+        <constructor-arg value="${catalog.tb}"/>
+        <property name="categoryTreeLoader" ref="categoryTreeLoader"/>
+        <property name="jdbcTemplate" ref="retailerJdbcTemplate"/>
+        <property name="searchPhraseCountLoader" ref="searchPhraseCountLoader"/>
+        <property name="solrServer" ref="solrServer"/>
+        <property name="peapodProdCatLoader" ref="peapodProductToCategoryDelegate"/>
+        <property name="priceTierLoader" ref="priceTierLoader"/>
+        <property name="aliasService" ref="aliasService"/>
+    </bean>
+
+    <bean name="productIndexer" class="com.peapod.v2.search.indexer.svc.indexer.impl.ProductIndexer">
+        <constructor-arg value="${catalog.tb}"/>
+        <property name="categoryTreeLoader" ref="categoryTreeLoader"/>
+        <property name="jdbcTemplate" ref="retailerJdbcTemplate" />
+        <property name="solrServer" ref="solrServer"/>
+        <property name="peapodProdCatLoader" ref="peapodProductToCategoryDelegate"/>
+        <property name="priceTierLoader" ref="priceTierLoader"/>
+        <property name="productGroupLoader" ref="productGroupLoader"/>
+        <property name="aliasService" ref="aliasService"/>
+        <property name="singleRootCatService" ref="singleRootCatService"/>
+        <property name="ecomStoreInfoLoader" ref="ecomStoreInfoLoader"/>
+        <property name="productRatingLoader" ref="productRatingLoader"/>
+    </bean>
+
+    <bean name="ecomStoreInfoLoader" class="com.peapod.v2.search.indexer.svc.loader.impl.DatabaseEcomStoreInfomationLoader">
+        <property name="jdbcTemplate" ref="retailerJdbcTemplate" />
+    </bean>
+
+    <bean name="productRatingLoader" class="com.peapod.v2.search.indexer.svc.loader.impl.DatabaseProductRatingLoader">
+        <property name="jdbcTemplate" ref="retailerJdbcTemplate" />
+    </bean>
+
+    <bean name="singleRootCatService" class="com.peapod.v2.search.indexer.svc.indexer.impl.SingleRootCatService">
+        <property name="consumerCategoryLoader" ref="consumerCategoryLoader" />
+    </bean>
+
+    <bean name="purchasesConfig" class="org.springframework.beans.factory.config.MapFactoryBean">
+        <property name="targetMapClass">
+            <value>java.util.HashMap</value>
+        </property>
+        <property name="sourceMap">
+            <map>
+                <entry key="numThreads" value="${purchases.num.threads}" />
+                <entry key="threshold" value="${purchases.threshold}" />
+                <entry key="indexBatchSize" value="${purchases.index.batch.size}" />
+                <entry key="numMonthsToIndex" value="${purchases.num.months.to.index}" />
+            </map>
+        </property>
+    </bean>
+
+    <bean name="purchasesIndexer" class="com.peapod.v2.search.indexer.svc.indexer.impl.DefaultPurchasesIndexer">
+        <property name="jdbcTemplate" ref="ppdWarehouseJdbcTemplate" />
+        <property name="userLoader" ref="userLoader" />
+        <property name="upcProductLoader" ref="upcProductLoader" />
+        <!-- <property name="solrServer" ref="purchasesSolrServer" /> -->
+        <property name="solrServer" ref="solrServer"/>
+        <property name="config" ref="purchasesConfig" />
+        <property name="jobService" ref="purchasesQueueJobService" />
+        <property name="ppdWarehouseJdbcTemplate" ref="ppdWarehouseJdbcTemplate" />
+        <property name="ecompNamedParamJdbcTemplate" ref="ecompNamedParamJdbcTemplate" />
+        <property name="cfavpJdbcTemplate" ref="cfavpJdbcTemplate" />
+        <property name="aliasService" ref="aliasService"/>
+    </bean>
+
+    <bean name="purchasesQueueJobService" class="com.peapod.v2.search.indexer.svc.jobs.purchases.ArrayBlockingQueueJobService">
+        <constructor-arg value="#{purchasesConfig['numThreads']}" /><!-- capacity of ArrayBlockingQueue -->
+    </bean>
+
+    <bean name="priceTierLoader" class="com.peapod.v2.search.indexer.svc.loader.pricetiers.PriceTierLoader" init-method="init">
+        <property name="jdbcTemplate" ref="retailerJdbcTemplate" />
+    </bean>
+
+    <bean name="productGroupLoader" class="com.peapod.v2.search.indexer.svc.loader.impl.DatabaseProductGroupLoader" init-method="init">
+        <property name="jdbcTemplate" ref="retailerJdbcTemplate" />
+    </bean>
+
+    <bean name="consumerCategoryLoader" class="com.peapod.v2.search.indexer.svc.loader.impl.DatabaseConsumerCategoryLoader" init-method="init">
+        <constructor-arg value="${catalog.tb}"/>
+        <property name="jdbcTemplate" ref="catalogJdbcTemplate" />
+        <property name="consumerCatAttrId" value="${consum.cat.attr.id}" />
+        <property name="categoryTreeLoader" ref="categoryTreeLoader"/>
+        <property name="propertiesUtil" ref="propertiesUtil" />
+    </bean>
+
+    <bean name="userLoader" class="com.peapod.v2.search.indexer.svc.loader.purchases.UserLoader" init-method="init">
+        <property name="jdbcTemplate" ref="userRetailerJdbcTemplate" />
+    </bean>
+
+    <bean name="upcProductLoader" class="com.peapod.v2.search.indexer.svc.loader.purchases.UpcProductLoader" init-method="init">
+        <property name="jdbcTemplate" ref="retailerJdbcTemplate" />
+    </bean>
+
+    <bean name="peapodIndexer" class="com.peapod.v2.search.indexer.svc.indexer.impl.PeapodIndexer">
+        <property name="indexers">
+            <list>
+                <ref bean="keywordsIndexer"/>
+                <ref bean="productIndexer"/>
+            </list>
+        </property>
+    </bean>
+
+    <bean name="synonymsLoader" class="com.peapod.v2.search.indexer.svc.synonyms.impl.DefaultSynonymFileLoader">
+        <property name="httpClient">
+            <bean class="org.apache.commons.httpclient.HttpClient">
+                <constructor-arg>
+                    <bean class="org.apache.commons.httpclient.MultiThreadedHttpConnectionManager">
+                        <property name="maxConnectionsPerHost" value="10"/>
+                        <property name="maxTotalConnections" value="10"/>
+                    </bean>
+                </constructor-arg>
+            </bean>
+        </property>
+        <property name="reloadCoreUrl" value="${reload.core.url}"/>
+        <!--  <property name="uploadSynonymsScript" value="${upload.synonyms.script}"/> -->
+        <property name="zkClient">
+            <bean class="org.apache.solr.common.cloud.SolrZkClient">
+                <constructor-arg value="${zk.hosts.urls}" />
+                <constructor-arg value="${zk.client.timeout}" />
+                <constructor-arg value="${zk.connect.timeout}" />
+            </bean>
+        </property>
+        <property name="aliasService" ref="aliasService"/>
+        <property name="synonymsFileCreator">
+            <bean class="com.peapod.v2.search.indexer.svc.synonyms.impl.DatabaseSynonymsFileCreator">
+                <constructor-arg value="${catalog.tb}"/>
+                <property name="synonymsFile" value="${synonym.target.file}"/>
+                <property name="jdbcTemplate" ref="catalogJdbcTemplate"/>
+            </bean>
+        </property>
+        <property name="synonymsLocalFile" value="${synonym.target.file}"/>
+        <property name="synonymsZKKeywords1Path" value="${synonyms.keywords1.zk.path}"/>
+        <property name="synonymsZKKeywords2Path" value="${synonyms.keywords2.zk.path}"/>
+        <property name="synonymsZKProducts1Path" value="${synonyms.products1.zk.path}"/>
+        <property name="synonymsZKProducts2Path" value="${synonyms.products2.zk.path}"/>
+    </bean>
+
+    <bean name="indexerServerSvc" class="com.peapod.v2.search.indexer.svc.server.impl.DefaultIndexerServerSvc">
+        <property name="categoryTreeLoader" ref="categoryTreeLoader"/>
+        <property name="indexer" ref="peapodIndexer"/>
+        <property name="searchPhraseCountLoader" ref="searchPhraseCountLoader"/>
+        <property name="synonymsFileLoader" ref="synonymsLoader"/>
+        <property name="priceTierLoader" ref="priceTierLoader"/>
+        <property name="productGroupLoader" ref="productGroupLoader"/>
+    </bean>
+
+    <bean name="aliasService" class="com.peapod.v2.search.indexer.svc.solr.impl.DefaultAliasService">
+        <property name="httpClient">
+            <bean class="org.apache.commons.httpclient.HttpClient">
+                <constructor-arg>
+                    <bean class="org.apache.commons.httpclient.MultiThreadedHttpConnectionManager">
+                        <property name="maxConnectionsPerHost" value="10"/>
+                        <property name="maxTotalConnections" value="10"/>
+                    </bean>
+                </constructor-arg>
+            </bean>
+        </property>
+
+        <property name="createAliasUrl" value="${create.alias.url}" />
+        <property name="clusterStatusUrl" value="${cluster.status.url}" />
+    </bean>
+
+    <bean name="jobService" class="com.peapod.v2.search.indexer.svc.jobs.impl.SimpleQueueJobService"/>
+
+</beans>
