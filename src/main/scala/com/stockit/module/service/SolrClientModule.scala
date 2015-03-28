@@ -15,5 +15,7 @@ class SolrClientModule extends Module {
 
     bind [SolrClient] identifiedBy 'solrClient and 'httpSolrClient and 'articlesSolrClient to new HttpSolrClient(inject[String]('solr and 'articlesHttpUrl), inject[HttpClient]('httpClient and 'poolingHttpClient)) //(inject[String]('solr and 'cloudUrl), inject[LBHttpSolrClient]('solrClient and 'lbSolrClient))
 
+    bind [SolrClient] identifiedBy 'solrClient and 'httpSolrClient and 'historicStockSolrClient to new HttpSolrClient(inject[String]('solr and 'historicStockHttpUrl), inject[HttpClient]('httpClient and 'poolingHttpClient)) //(inject[String]('solr and 'cloudUrl), inject[LBHttpSolrClient]('solrClient and 'lbSolrClient))
+
     bind [SolrClient] identifiedBy 'solrClient and 'httpSolrClient and 'stocksSolrClient to new HttpSolrClient(inject[String]('solr and 'stocksHttpUrl), inject[HttpClient]('httpClient and 'poolingHttpClient)) //(inject[String]('solr and 'cloudUrl), inject[LBHttpSolrClient]('solrClient and 'lbSolrClient))
 }

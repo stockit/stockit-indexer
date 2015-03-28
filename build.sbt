@@ -21,7 +21,9 @@ libraryDependencies ++= Seq(
     "org.slf4j" % "slf4j-api" % "1.6.4",
     "org.slf4j" % "slf4j-simple" % "1.6.4",
     "mysql" % "mysql-connector-java" % "5.1.12",
-    "com.typesafe" % "config" % "1.2.1"
+    "com.typesafe" % "config" % "1.2.1",
+    "commons-httpclient" % "commons-httpclient" % "3.1",
+    "org.json4s" %% "json4s-native" % "3.2.11"
 )
 
 resolvers += "Secured Central Repository" at "https://repo1.maven.org/maven2"
