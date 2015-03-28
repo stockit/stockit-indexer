@@ -15,5 +15,6 @@ object ArticlesIndexerRunner extends Injectable {
         val articlesIndexer = inject[ArticlesIndexer]('indexer and 'articles)
 
         articlesIndexer.indexAll()
+
     }
 }
