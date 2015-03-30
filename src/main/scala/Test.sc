@@ -1,36 +1,15 @@
-import java.io.{FileReader, File}
-import java.util.Scanner
 
-var file = new File("/Users/dmcquill/dev/Scala/stockit-indexer/tickerSymbols.csv")
+val testRange = 1 to 150
 
-var fileReader = new Scanner(new FileReader(file))
+val maxBatchSize = 7
 
-var keyedTickers: Map[String, Seq[String]] = Map[String, Seq[String]]()
+val numBatches = Math.ceil( testRange.size.toDouble / maxBatchSize ).toInt
+var i = 2
+var test = maxBatchSize * (i - 1) + (if(i > 0) 1 else 0 )
 
-keyedTickers.contains("test")
-while(fileReader.hasNext()) {
-    val line = fileReader.nextLine
-    val lineParts = line.split(",")
-    val ticker: String = lineParts(0)
-    val companyName: String = lineParts(1)
+testRange.grouped(7).toList.map({ _(0)})
 
-    if(keyedTickers.contains(ticker) == false) {
-        keyedTickers += ticker -> Seq[String]()
-    }
+100 % 10
 
-    var aliases = keyedTickers(ticker)
 
-    if(aliases.contains(ticker) == false) {
-        aliases = aliases :+ ticker
-    }
 
-    if(aliases.contains(companyName) == false) {
-        aliases = aliases :+ companyName
-    }
-
-    keyedTickers += (ticker -> aliases)
-}
-
-fileReader.close()
-
-keyedTickers
