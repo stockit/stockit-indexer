@@ -14,7 +14,7 @@ class SolrClientConfigModule extends Module {
 
     bind [String] identifiedBy 'solr and 'stocksHttpUrl to "http://dmcquill.dev.peapod.com:8983/solr/stock"
 
-    bind [String] identifiedBy 'solr and 'articleStockHttpUrl to "http://dmcquill.dev.peapod.com:8983/solr/articleStock"
+    bind [String] identifiedBy 'solr and 'articleStockHttpUrl to "http://solr.deepdishdev.com:8983/solr/articleStock"
 
     bind [Int] identifiedBy 'solr and 'clientTimeout to 30000
     bind [Int] identifiedBy 'solr and 'connectTimeout to 30000
