@@ -4,7 +4,7 @@ import com.stockit.service.ticker.TickerDatasource
 
 import java.io.IOException
 import java.text.SimpleDateFormat
-import java.util.Date
+import java.util.{Date,Collection}
 import java.lang.{Double,Long}
 
 import com.stockit.model.{StockHistory, Article}
@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory
 class ArticleStockIndexer extends Indexer {
     implicit val formats = org.json4s.DefaultFormats
 
-    val logger = LoggerFactory.getLogger(classOf[HistoricStockIndexer])
+    val logger = LoggerFactory.getLogger(classOf[ArticleStockIndexer])
 
     var solrClient: SolrClient = null
 
@@ -34,72 +34,54 @@ class ArticleStockIndexer extends Indexer {
 
     var tickerDatasource: TickerDatasource = null
 
-    def processArticle(article: Article): Option[(String, Article, Double)] = {
-        val id = article.id
+    def articlesForTicker(ticker: String, alias: Seq[String]): Seq[(String, Double)] = {
+        val query = new SolrQuery
+        query.setQuery(s"content:${"\"" + ticker + "\""}")
+        query.setFields("id", "score")
+        query.setRows(1000)
 
-        var tickersProcessed = 0
-        val tickerAliases = tickerDatasource.getTickerAliasesWithoutTickerName
+        try {
+            val solrResponse = articleSolrClient.query(query)
+            val documentList = solrResponse.getResults
 
-        val tickerScores = tickerAliases.zipWithIndex.par
-            .map { (indexedTickerAlias: ((String, Seq[String]), Int)) =>
-                val tickerAlias = indexedTickerAlias._1
+            var articles: Seq[(String, Double)] = Seq[(String, Double)]()
 
-                if (tickerAlias._2.size == 0) {
-                    tickersProcessed += 1
-                    if (tickersProcessed % 1000 == 0 || tickerAliases.size - tickersProcessed < 10) {
-                        logger.info(s"processed ticker [$tickersProcessed] of [${tickerAliases.size}]")
-                    }
-                    None
-                } else {
-                    val scoreQuery = new SolrQuery()
-                    scoreQuery.setQuery(s"content:${"\"" + tickerAlias._2(0) + "\""}")
-                    scoreQuery.setFilterQueries(s"id:${"\"" + id + "\""}")
-                    scoreQuery.setFields("id,score")
-                    scoreQuery.setSort("score", SolrQuery.ORDER.desc)
+            var it = documentList.listIterator
+            while(it.hasNext) {
+                val solrDoc = it.next
 
-                    try {
-                        val solrResponse = articleSolrClient.query(scoreQuery)
-                        tickersProcessed += 1
-
-                        if (tickersProcessed % 1000 == 0 || tickerAliases.size - tickersProcessed < 10) {
-                            logger.info(s"processed ticker [$tickersProcessed] of [${tickerAliases.size}]")
-                        }
-                        Some((tickerAlias._1, solrResponse))
-                    } catch {
-                        case e: Exception => {
-                            tickersProcessed += 1
-                            if (tickersProcessed % 1000 == 0 || tickerAliases.size - tickersProcessed < 10) {
-                                logger.info(s"processed ticker [$tickersProcessed] of [${tickerAliases.size}] in error")
-                            }
-                            None
-                        }
+                (solrDoc.getFieldValue("id"), solrDoc.getFieldValue("score")) match {
+                    case (id: String, score: java.lang.Float) => {
+                        val castedScore: Double = score.doubleValue
+                        articles = articles :+ (id, castedScore)
                     }
                 }
             }
-            .flatten
-            .map { (tickerQuery: (String, QueryResponse)) =>
-                val documentList = tickerQuery._2.getResults
 
-                if (documentList.getNumFound == 0) {
-                    None
-                } else {
-                    val doc = documentList.get(0)
+            articles
 
-                    doc.getFieldValue("score") match {
-                        case (score: java.lang.Float) => {
-                            Some((tickerQuery._1, score.toDouble))
-                        }
-                    }
-                }
+        } catch {
+            case e: Exception => {
+                e.printStackTrace()
+                Seq[(String, Double)]()
             }
-            .flatten
-
-        if(tickerScores.isEmpty) {
-            None
-        } else {
-            val max = tickerScores.maxBy(_._2)
-            Some((max._1, article, max._2))
         }
+    }
+
+    def articleById(id: String): Option[Article] = {
+        var query = new SolrQuery
+        query.setQuery(s"id:${"\"" + id + "\""}")
+
+        val response = articleSolrClient.query(query)
+        val docList = response.getResults
+
+        if(docList.getNumFound > 0) {
+            val doc = docList.get(0)
+            (doc.getFieldValue("id"), doc.getFieldValue("content"), doc.getFieldValue("date"), doc.getFieldValue("title")) match {
+                case (id: String, content: String, date: Date, title: String) => Some(Article(id, title, content, date))
+                case _ => None
+            }
+        } else None
     }
 
     def mapArticleStock(scoredStockArticle: (String, Article, Double)): Option[(SolrDocument, Article)] = {
@@ -141,108 +123,114 @@ class ArticleStockIndexer extends Indexer {
 
         logger.info("Re-indexing stock articles")
 
+        val tickerAliases = tickerDatasource.getTickerAliasesWithoutTickerName
 
-        def processQuery(query: SolrQuery): Unit = {
+        var numProcessed = 0
+        val tickerArticleScores = tickerAliases.par
+            .map { (tickerAlias: (String, Seq[String])) =>
+                val scoredArticles = articlesForTicker(tickerAlias._1, tickerAlias._2).map((result: (String, Double)) => (tickerAlias._1, result._1, result._2))
+                numProcessed += 1
+                logger.info(s"processed [$numProcessed] of [${tickerAliases.size}}], found: [${scoredArticles.size}]")
+                scoredArticles
+            }.flatten
 
-            def processInnerQuery(articleQuery: SolrQuery): Unit = {
-                val response = articleSolrClient.query(articleQuery)
+        logger.info("Finished processing tickers")
 
-                val documentList = response.getResults
+        val articleIds = tickerArticleScores.map(_._2).toSet
 
-                var docList: Seq[Article] = Seq[Article]()
-                val it = documentList.listIterator
-                while(it.hasNext) {
-                    val document = it.next()
-                    (document.getFieldValue("id"),document.getFieldValue("title"),document.getFieldValue("content"),document.getFieldValue("date")) match {
-                        case (id: String, title: String, content: String, date: Date) => {
-                            docList = docList :+ Article(id, title, content, date)
-                        }
-                    }
-                }
+        numProcessed = 0
 
-                val articleStocks: Seq[(String, Article, Double)] = docList.zipWithIndex.map { (indexedId: (Article, Int)) =>
-                    val result = processArticle(indexedId._1)
+        val scoredIdMap = articleIds.map { (id: String) =>
+            val filteredTickerScores = tickerArticleScores filter (_._2 == id)
+            val mappedResult = (id, filteredTickerScores.toList.sortBy(_._3).map((tickerScore: (String, String, Double)) => (tickerScore._1, tickerScore._3)).seq)
 
-                    logger.info(s"processed [${indexedId._2}] of [${docList.size}]")
+            numProcessed += 1
+            logger.info(s"processed article id [$numProcessed] of [${articleIds.size}}]")
 
-                    result
-                }.flatten
-
-                val historyStockArticles: Seq[(StockHistory, Article)] = articleStocks
-                    .map(mapArticleStock)
-                    .flatMap { list =>
-                    list.map { (articleSolrDoc: (SolrDocument, Article)) =>
-                        val solrDocument = articleSolrDoc._1
-                        val article = articleSolrDoc._2
-                        (solrDocument.getFieldValue("id"), solrDocument.getFieldValue("symbol"), solrDocument.getFieldValue("date"), solrDocument.getFieldValue("open"), solrDocument.getFieldValue("high"), solrDocument.getFieldValue("low"), solrDocument.getFieldValue("close"), solrDocument.getFieldValue("adjClose"), solrDocument.getFieldValue("volume")
-                            ) match {
-                            case (
-                                id: String, symbol: String, date: Date, open: Double, high: Double, low: Double, close: Double, adjClose: Double, volume: Long
-                                ) => Some((StockHistory(id, symbol, date, open, high, low, close, adjClose, volume), article))
-                            case _ => None
-                        }
-                    }
-                }
-                    .flatten.seq
-
-                val solrDocuments = historyStockArticles
-                    .map { (stockArticle: (StockHistory, Article)) =>
-                    val stockHistory = stockArticle._1
-                    val article = stockArticle._2
-                    val doc: SolrInputDocument = new SolrInputDocument()
-                    doc.addField("articleId", article.id)
-                    doc.addField("title", article.title)
-                    doc.addField("content", article.content)
-                    doc.addField("date", article.date)
-
-                    doc.addField("stockHistoryId", stockHistory.id)
-                    doc.addField("symbol", stockHistory.symbol)
-                    doc.addField("historyDate", stockHistory.date)
-                    doc.addField("open", stockHistory.open)
-                    doc.addField("high", stockHistory.high)
-                    doc.addField("low", stockHistory.low)
-                    doc.addField("close", stockHistory.close)
-                    doc.addField("adjClose", stockHistory.adjClose)
-                    doc.addField("volume", stockHistory.volume)
-                    doc
-                }
-
-                if(solrDocuments.size > 0) {
-                    solrClient.add(solrDocuments)
-                }
-
-                try {
-                    solrClient.commit
-                    solrClient.optimize
-                } catch {
-                    case sse: SolrServerException =>
-                        logger.error("Error indexing stock articles", sse);
-                    case ioe: IOException =>
-                        logger.error("Error indexing stock articles", ioe);
-                    case e: Exception =>
-                        logger.error("Error indexing stock articles", e);
-                }
-
-                if(articleQuery.getStart < response.getResults.getNumFound) {
-                    query.setStart(query.getStart + rowsPerIteration)
-
-                    logger.info(s"completed [${query.getStart + query.getRows}] of [${response.getResults.getNumFound}]")
-
-                    processInnerQuery(query)
-                }
-            }
-
-            processInnerQuery(query)
+            mappedResult
+        } filterNot (_._2.isEmpty) map{ (tuple: (String, Seq[(String, Double)])) =>
+            (tuple._1, tuple._2.head)
         }
 
-        val articleQuery = new SolrQuery()
-        articleQuery.setQuery("*:*")
-        articleQuery.setStart(0)
-        articleQuery.setRows(rowsPerIteration)
+        numProcessed = 0
 
-        processQuery(articleQuery)
+        val articles = scoredIdMap.map { (idTuple: (String, (String, Double))) =>
+            val article = articleById(idTuple._1)
+
+            numProcessed += 1
+            logger.info(s"processed article id [$numProcessed] of [${scoredIdMap.size}}]")
+
+            article
+        }.flatten
+
+        logger.info(s"Retrieved relevant articles, found: [${articles.size}]")
+
+        numProcessed = 0
+
+        val historyStockArticles = articles
+            .map { (article: Article) =>
+                val foundScoredId = scoredIdMap.filter(_._1 == article.id).head
+
+                val articleStock = mapArticleStock(foundScoredId._2._1, article, foundScoredId._2._2)
+
+                numProcessed += 1
+                logger.info(s"processed article stock history [$numProcessed] of [${articles.size}}]")
+
+                articleStock
+            }
+            .flatten
+            .map { ( articleDocument: (SolrDocument, Article)) =>
+                val doc = articleDocument._1
+                (doc.getFieldValue("id"), doc.getFieldValue("symbol"), doc.getFieldValue("date"), doc.getFieldValue("open"), doc.getFieldValue("high"), doc.getFieldValue("low"), doc.getFieldValue("close"), doc.getFieldValue("adjClose"), doc.getFieldValue("volume")) match {
+                    case (id: String, symbol: String, date: Date, open: Double, high: Double, low: Double, close: Double, adjClose: Double, volume: Long) => {
+                        Some(StockHistory(id, symbol, date, open, high, low, close, adjClose, volume), articleDocument._2)
+                    }
+                    case _ => None
+                }
+            }
+            .flatten
+
+        logger.info(s"Retrieved stock history for articles, found: [${historyStockArticles.size}]")
+
+        val solrDocuments = historyStockArticles
+            .map { (stockArticle: (StockHistory, Article)) =>
+                val stockHistory = stockArticle._1
+                val article = stockArticle._2
+                val doc: SolrInputDocument = new SolrInputDocument()
+                doc.addField("articleId", article.id)
+                doc.addField("title", article.title)
+                doc.addField("content", article.content)
+                doc.addField("date", article.date)
+
+                doc.addField("stockHistoryId", stockHistory.id)
+                doc.addField("symbol", stockHistory.symbol)
+                doc.addField("historyDate", stockHistory.date)
+                doc.addField("open", stockHistory.open)
+                doc.addField("high", stockHistory.high)
+                doc.addField("low", stockHistory.low)
+                doc.addField("close", stockHistory.close)
+                doc.addField("adjClose", stockHistory.adjClose)
+                doc.addField("volume", stockHistory.volume)
+                doc
+            }.seq.toSeq
+
+        if(solrDocuments.size > 0) {
+            solrClient.add(solrDocuments)
+        }
 
         logger.info("Re-indexed stock articles")
+
+        try {
+            solrClient.commit
+            solrClient.optimize
+        } catch {
+            case sse: SolrServerException =>
+                logger.error("Error indexing stock articles", sse);
+            case ioe: IOException =>
+                logger.error("Error indexing stock articles", ioe);
+            case e: Exception =>
+                logger.error("Error indexing stock articles", e);
+        }
     }
 
     def deleteAll(): Unit = clearIndexByQuery("*:*")

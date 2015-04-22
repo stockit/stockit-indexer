@@ -8,11 +8,11 @@ import scaldi.Module
 class SolrClientConfigModule extends Module {
     bind [String] identifiedBy 'solr and 'cloudUrl to "solr.deepdishdev.com:8983"
 
-    bind [String] identifiedBy 'solr and 'articlesHttpUrl to "http://dmcquill.dev.peapod.com:8983/solr/articles"
+    bind [String] identifiedBy 'solr and 'articlesHttpUrl to "http://solr.deepdishdev.com:8983/solr/articles"
 
-    bind [String] identifiedBy 'solr and 'historicStockHttpUrl to "http://dmcquill.dev.peapod.com:8983/solr/stockHistory"
+    bind [String] identifiedBy 'solr and 'historicStockHttpUrl to "http://solr.deepdishdev.com:8983/solr/stockHistory"
 
-    bind [String] identifiedBy 'solr and 'stocksHttpUrl to "http://dmcquill.dev.peapod.com:8983/solr/stock"
+    bind [String] identifiedBy 'solr and 'stocksHttpUrl to "http://solr.deepdishdev.com:8983/solr/stock"
 
     bind [String] identifiedBy 'solr and 'articleStockHttpUrl to "http://solr.deepdishdev.com:8983/solr/articleStock"
 
