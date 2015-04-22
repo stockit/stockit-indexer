@@ -35,6 +35,7 @@ class ArticleStockIndexer extends Indexer {
     var tickerDatasource: TickerDatasource = null
 
     def articlesForTicker(ticker: String, alias: Seq[String]): Seq[(String, Double)] = {
+
         val query = new SolrQuery
         query.setQuery(s"content:${"\"" + ticker + "\""}")
         query.setFields("id", "score")
@@ -142,7 +143,8 @@ class ArticleStockIndexer extends Indexer {
 
         val scoredIdMap = articleIds.map { (id: String) =>
             val filteredTickerScores = tickerArticleScores filter (_._2 == id)
-            val mappedResult = (id, filteredTickerScores.toList.sortBy(_._3).map((tickerScore: (String, String, Double)) => (tickerScore._1, tickerScore._3)).seq)
+            val sortedList = filteredTickerScores.toList.sortBy(_._3).reverse
+            val mappedResult = (id, sortedList.map((tickerScore: (String, String, Double)) => (tickerScore._1, tickerScore._3)).seq)
 
             numProcessed += 1
             logger.info(s"processed article id [$numProcessed] of [${articleIds.size}}]")
