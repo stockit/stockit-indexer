@@ -1,6 +1,7 @@
 package com.stockit.module.service
 
-import com.stockit.service.indexer.impl.{HistoricStockIndexer, StockIndexer, ArticlesIndexer}
+import com.stockit.service.indexer.impl.{ArticleStockIndexer, HistoricStockIndexer, StockIndexer, ArticlesIndexer}
+import com.stockit.service.ticker.TickerDatasource
 import org.apache.solr.client.solrj.SolrClient
 import org.apache.solr.client.solrj.impl.{HttpSolrClient, LBHttpSolrClient, CloudSolrClient}
 import scaldi.Module
@@ -22,5 +23,14 @@ class IndexerModule extends Module {
 
     bind [HistoricStockIndexer] identifiedBy 'indexer and 'historicStock to new HistoricStockIndexer initWith {
         indexer: HistoricStockIndexer => indexer.solrClient = inject[SolrClient]('solrClient and 'httpSolrClient and 'historicStockSolrClient)
+    }
+
+    bind [ArticleStockIndexer] identifiedBy 'indexer and 'articleStock to new ArticleStockIndexer initWith {
+        indexer: ArticleStockIndexer => {
+            indexer.solrClient = inject[SolrClient]('solrClient and 'httpSolrClient and 'articleStockSolrClient)
+            indexer.stockHistorySolrClient = inject[SolrClient]('solrClient and 'httpSolrClient and 'historicStockSolrClient)
+            indexer.articleSolrClient = inject[SolrClient]('solrClient and 'httpSolrClient and 'articlesSolrClient)
+            indexer.tickerDatasource = new TickerDatasource
+        }
     }
 }

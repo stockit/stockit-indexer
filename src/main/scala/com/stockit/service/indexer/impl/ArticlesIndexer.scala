@@ -1,5 +1,7 @@
 package com.stockit.service.indexer.impl
 
+import org.apache.lucene.analysis.synonym.SolrSynonymParser
+
 import collection.JavaConversions.asJavaCollection
 
 import java.io.IOException
@@ -46,7 +48,7 @@ class ArticlesIndexer extends Indexer {
             .run(session)
             .map({ article: Article =>
                 var doc: SolrInputDocument = new SolrInputDocument()
-                doc.addField("id", article.id)
+                doc.addField("id", article.id.get)
                 doc.addField("content", article.content)
                 doc.addField("date", new Date(article.date.getTime))
                 doc.addField("title", article.title)
