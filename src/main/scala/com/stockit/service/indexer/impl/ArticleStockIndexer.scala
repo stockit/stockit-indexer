@@ -4,7 +4,7 @@ import com.stockit.service.ticker.TickerDatasource
 
 import java.io.IOException
 import java.text.SimpleDateFormat
-import java.util.{Date,Collection}
+import java.util.{Calendar, Date, Collection}
 import java.lang.{Double,Long}
 
 import com.stockit.model.{StockHistory, Article}
@@ -14,9 +14,6 @@ import org.apache.solr.client.solrj.{SolrQuery, SolrServerException, SolrClient}
 import org.apache.solr.common.{SolrDocument, SolrInputDocument}
 import org.slf4j.LoggerFactory
 
-/**
- * Created by dmcquill on 4/17/15.
- */
 class ArticleStockIndexer extends Indexer {
     implicit val formats = org.json4s.DefaultFormats
 
@@ -29,8 +26,6 @@ class ArticleStockIndexer extends Indexer {
     var articleSolrClient: SolrClient = null
 
     val rowsPerIteration = 1
-
-    val dayFormat = new SimpleDateFormat("yyyy-MM-dd")
 
     var tickerDatasource: TickerDatasource = null
 
@@ -47,30 +42,28 @@ class ArticleStockIndexer extends Indexer {
 
             var articles: Seq[(String, Double)] = Seq[(String, Double)]()
 
-            var it = documentList.listIterator
+            val it = documentList.listIterator
             while(it.hasNext) {
                 val solrDoc = it.next
 
-                (solrDoc.getFieldValue("id"), solrDoc.getFieldValue("score")) match {
-                    case (id: String, score: java.lang.Float) => {
+                (solrDoc.getFieldValue("id"), solrDoc.getFieldValue("score")) match{
+                    case (id: String, score: java.lang.Float) =>
                         val castedScore: Double = score.doubleValue
                         articles = articles :+ (id, castedScore)
-                    }
                 }
             }
 
             articles
 
         } catch {
-            case e: Exception => {
+            case e: Exception =>
                 e.printStackTrace()
                 Seq[(String, Double)]()
-            }
         }
     }
 
     def articleById(id: String): Option[Article] = {
-        var query = new SolrQuery
+        val query = new SolrQuery
         query.setQuery(s"id:${"\"" + id + "\""}")
 
         val response = articleSolrClient.query(query)
@@ -88,10 +81,16 @@ class ArticleStockIndexer extends Indexer {
     def mapArticleStock(scoredStockArticle: (String, Article, Double)): Option[(SolrDocument, Article)] = {
         val ticker = scoredStockArticle._1
         val article = scoredStockArticle._2
-        val score = scoredStockArticle._3
 
-        var query = new SolrQuery
-        val plusOneDate = new Date(article.date.getTime() + (1000 * 60 * 60 * 24))
+        val dayFormat = new SimpleDateFormat("yyyy-MM-dd")
+
+        val query = new SolrQuery
+        val calendar = Calendar.getInstance()
+        calendar.setTime(article.date)
+        calendar.add(Calendar.DATE, 1)
+
+        val plusOneDate = calendar.getTime
+
         val startDay = s"${dayFormat.format(plusOneDate)}T00:00:00Z"
         val endDay = s"${dayFormat.format(plusOneDate)}T23:59:59Z"
 
@@ -111,9 +110,7 @@ class ArticleStockIndexer extends Indexer {
                 None
             }
         } catch {
-            case e: Exception => {
-                None
-            }
+            case e: Exception => None
         }
     }
 
@@ -184,9 +181,8 @@ class ArticleStockIndexer extends Indexer {
             .map { ( articleDocument: (SolrDocument, Article)) =>
                 val doc = articleDocument._1
                 (doc.getFieldValue("id"), doc.getFieldValue("symbol"), doc.getFieldValue("date"), doc.getFieldValue("open"), doc.getFieldValue("high"), doc.getFieldValue("low"), doc.getFieldValue("close"), doc.getFieldValue("adjClose"), doc.getFieldValue("volume")) match {
-                    case (id: String, symbol: String, date: Date, open: Double, high: Double, low: Double, close: Double, adjClose: Double, volume: Long) => {
+                    case (id: String, symbol: String, date: Date, open: Double, high: Double, low: Double, close: Double, adjClose: Double, volume: Long) =>
                         Some(StockHistory(id, symbol, date, open, high, low, close, adjClose, volume), articleDocument._2)
-                    }
                     case _ => None
                 }
             }
